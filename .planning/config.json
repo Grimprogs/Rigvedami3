@@ -1,0 +1,12 @@
+{
+  "mode": "interactive",
+  "gates": {
+    "research": false,
+    "plan_check": true,
+    "verification": true
+  },
+  "graphify": {
+    "enabled": true,
+    "path": "graphify-out/graph.json"
+  }
+}
