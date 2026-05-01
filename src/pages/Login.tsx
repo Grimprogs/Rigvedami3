@@ -13,8 +13,8 @@ export default function Login({ role }: { role: Role }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [email, setEmail] = useState(role === "admin" ? "admin@ztasks.io" : "");
-  const [password, setPassword] = useState(role === "admin" ? "admin123" : "");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -101,12 +101,7 @@ export default function Login({ role }: { role: Role }) {
             </Button>
           </form>
 
-          {isAdmin && (
-            <div className="mt-5 rounded-xl border bg-muted/40 p-3 text-xs text-muted-foreground">
-              <div className="font-medium text-foreground mb-1">Demo credentials</div>
-              Email: <code className="font-mono">admin@ztasks.io</code> · Password: <code className="font-mono">admin123</code>
-            </div>
-          )}
+
 
           <div className="mt-5 text-center text-sm text-muted-foreground">
             {isAdmin
