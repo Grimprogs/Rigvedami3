@@ -53,9 +53,7 @@ export function Sidebar({ open, onClose }: Props) {
         )}
       >
         <div className="flex h-16 items-center gap-2.5 px-5 border-b border-sidebar-border">
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-primary shadow-glow">
-            <CheckSquare2 className="h-5 w-5 text-white" />
-          </div>
+          <img src="/ztasks-logo.jpg" alt="ZTasks Logo" className="h-9 w-9 rounded-xl object-cover shadow-glow" />
           <div>
             <div className="font-display text-lg font-bold leading-none">ZTasks</div>
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground mt-0.5">

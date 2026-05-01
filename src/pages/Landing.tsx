@@ -17,9 +17,7 @@ export default function Landing() {
     <div className="relative min-h-screen overflow-hidden hero-bg">
       <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
         <div className="flex items-center gap-2.5">
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-primary shadow-glow">
-            <CheckSquare2 className="h-5 w-5 text-white" />
-          </div>
+          <img src="/ztasks-logo.jpg" alt="ZTasks Logo" className="h-9 w-9 rounded-xl object-cover shadow-glow" />
           <span className="font-display text-xl font-bold">ZTasks</span>
         </div>
         <nav className="hidden items-center gap-6 text-sm md:flex">

@@ -40,9 +40,7 @@ export default function Login({ role }: { role: Role }) {
       <div className="absolute inset-0 -z-10" aria-hidden />
       <header className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
         <Link to="/" className="flex items-center gap-2.5">
-          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-primary shadow-glow">
-            <CheckSquare2 className="h-5 w-5 text-white" />
-          </div>
+          <img src="/ztasks-logo.jpg" alt="ZTasks Logo" className="h-9 w-9 rounded-xl object-cover shadow-glow" />
           <span className="font-display text-xl font-bold">ZTasks</span>
         </Link>
         <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
