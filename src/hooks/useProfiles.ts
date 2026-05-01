@@ -85,30 +85,17 @@ export function useUpdateProfile() {
       newEmail?: string;
       newPassword?: string;
     }) => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-update-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({
-            userId: id,
-            profile: patch,
-            ...(newEmail ? { email: newEmail } : {}),
-            ...(newPassword ? { password: newPassword } : {}),
-          }),
+      const { data, error } = await supabase.functions.invoke('admin-update-user', {
+        body: {
+          userId: id,
+          profile: patch,
+          ...(newEmail ? { email: newEmail } : {}),
+          ...(newPassword ? { password: newPassword } : {}),
         }
-      );
+      });
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Update failed (${res.status})`);
+      if (error) {
+        throw new Error(error.message || 'Failed to update user via edge function');
       }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['profiles'] }),
