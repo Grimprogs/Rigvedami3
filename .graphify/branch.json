@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "branchName": "main",
-  "worktreePath": "C:\\anu\\ZTasks\\project-lilt",
+  "worktreePath": "C:\\Users\\Admin\\Downloads\\Ztasks\\project-lilt",
   "upstream": "origin/main",
-  "mergeBase": "68b5c503aaa6b34bf69f75556b2f2d05c193a3c3",
+  "mergeBase": "146e7c3410c9e18f49a854307cdab434e31c1da0",
   "firstSeenHead": "68b5c503aaa6b34bf69f75556b2f2d05c193a3c3",
-  "lastSeenHead": "68b5c503aaa6b34bf69f75556b2f2d05c193a3c3",
-  "lastAnalyzedHead": "68b5c503aaa6b34bf69f75556b2f2d05c193a3c3",
+  "lastSeenHead": "146e7c3410c9e18f49a854307cdab434e31c1da0",
+  "lastAnalyzedHead": "146e7c3410c9e18f49a854307cdab434e31c1da0",
   "stale": false,
   "staleReason": null,
   "staleSince": null,
   "lifecycleEvent": null,
   "createdAt": "2026-04-30T13:59:29.659Z",
-  "updatedAt": "2026-04-30T13:59:29.659Z"
+  "updatedAt": "2026-05-02T12:46:10.605Z"
 }

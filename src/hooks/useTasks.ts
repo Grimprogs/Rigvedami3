@@ -15,8 +15,14 @@ type UseTasksOptions = {
 function applyOverdue(tasks: Task[]): Task[] {
   const now = new Date();
   return tasks.map(t => {
-    if (t.status === 'completed' || t.status === 'completion_requested') return t;
-    const due = new Date(`${t.due_date}T${t.due_time}:00`);
+    // If it's done, being approved, or already being worked on, don't force 'overdue' status
+    if (t.status === 'completed' || t.status === 'completion_requested' || t.status === 'in_progress') return t;
+    
+    const time = t.due_time.includes(':') && t.due_time.split(':').length === 2 
+      ? `${t.due_time}:00` 
+      : t.due_time;
+    const due = new Date(`${t.due_date}T${time}`);
+    
     if (due < now) return { ...t, status: 'overdue' as TaskStatus };
     if (t.status === 'overdue') return { ...t, status: 'pending' as TaskStatus };
     return t;

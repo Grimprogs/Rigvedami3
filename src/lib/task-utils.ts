@@ -20,7 +20,10 @@ export function priorityMeta(p: TaskPriority) {
 }
 
 export function formatDue(t: Task) {
-  return new Date(`${t.due_date}T${t.due_time}:00`);
+  const time = t.due_time.includes(':') && t.due_time.split(':').length === 2 
+    ? `${t.due_time}:00` 
+    : t.due_time;
+  return new Date(`${t.due_date}T${time}`);
 }
 
 export function timeRemaining(t: Task) {

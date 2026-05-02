@@ -107,10 +107,11 @@ export function useUpdateProfile() {
         let errorMessage = 'Failed to update user via edge function';
         if (error instanceof Error) {
           errorMessage = error.message;
-          // @ts-ignore - Supabase might return extra info in some error types
-          if (error.context && typeof error.context.json === 'function') {
+          // Safely check for Supabase function error details
+          const anyErr = error as any;
+          if (anyErr.context && typeof anyErr.context.json === 'function') {
             try {
-              const body = await error.context.json();
+              const body = await anyErr.context.json();
               if (body.error) errorMessage = body.error;
             } catch (e) { /* ignore */ }
           }
@@ -149,26 +150,26 @@ export function useDeleteMetadata() {
   return useMutation({
     mutationFn: async ({ type, value }: { type: 'department' | 'job_title'; value: string }) => {
       // 1. Wipe from all profiles
-      const { error: profileError } = await supabase
-        .from('profiles')
+      const { error: profileError } = await (supabase
+        .from('profiles') as any)
         .update({ [type]: null })
         .eq(type, value);
       if (profileError) throw profileError;
 
       // 2. Wipe from rankings in app_settings to prevent 'ghost' rankings
-      const { data: currentRankings } = await supabase
-        .from('app_settings')
+      const { data: currentRankings } = await (supabase
+        .from('app_settings') as any)
         .select('value')
         .eq('key', 'rankings')
         .maybeSingle();
       
-      if (currentRankings?.value) {
+      if (currentRankings && currentRankings.value) {
         const val = currentRankings.value as { departments: string[], jobTitles: string[] };
         const key = type === 'department' ? 'departments' : 'jobTitles';
-        const newList = val[key].filter(x => x !== value);
+        const newList = (val[key] || []).filter(x => x !== value);
         
-        await supabase
-          .from('app_settings')
+        await (supabase
+          .from('app_settings') as any)
           .upsert({ key: 'rankings', value: { ...val, [key]: newList } });
       }
     },

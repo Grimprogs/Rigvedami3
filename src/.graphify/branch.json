@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "branchName": "main",
+  "worktreePath": "C:\\Users\\Admin\\Downloads\\Ztasks\\project-lilt",
+  "upstream": "origin/main",
+  "mergeBase": "146e7c3410c9e18f49a854307cdab434e31c1da0",
+  "firstSeenHead": "146e7c3410c9e18f49a854307cdab434e31c1da0",
+  "lastSeenHead": "146e7c3410c9e18f49a854307cdab434e31c1da0",
+  "lastAnalyzedHead": "146e7c3410c9e18f49a854307cdab434e31c1da0",
+  "stale": false,
+  "staleReason": null,
+  "staleSince": null,
+  "lifecycleEvent": null,
+  "createdAt": "2026-05-02T12:46:52.871Z",
+  "updatedAt": "2026-05-02T12:46:52.871Z"
+}

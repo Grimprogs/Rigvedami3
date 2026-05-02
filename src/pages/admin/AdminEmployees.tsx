@@ -2,12 +2,12 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useProfiles, useCreateEmployee, useUpdateProfile, useDeleteEmployee, useDeleteMetadata } from "@/hooks/useProfiles";
 import { useTasks } from "@/hooks/useTasks";
-import { useRankings, useUpdateRankings } from "@/hooks/useSettings";
+import { useRankings, useUpdateRankings, useVisibilitySettings, useUpdateVisibilitySettings, VisibilityMap } from "@/hooks/useSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { UserAvatar } from "@/components/UserAvatar";
-import { Search, Plus, Pencil, Trash2, Mail, Building2, Eye, Briefcase, Check, ChevronsUpDown, X, Filter, ListOrdered } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, Mail, Building2, Eye, Briefcase, Check, ChevronsUpDown, X, Filter, ListOrdered, ShieldCheck, Settings2 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger
 } from "@/components/ui/dialog";
@@ -17,11 +17,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useApp } from "@/context/AppContext";
 import {
-  DndContext, 
+  DndContext,
   closestCenter,
   KeyboardSensor,
   PointerSensor,
@@ -55,98 +56,50 @@ function normalize(s: string) {
 /** 
  * Hierarchical Permission Check:
  * An admin can only manage someone who is BELOW them in the rankings.
- * Priority 1: Department Rank
- * Priority 2: Job Title Rank (within the same department)
  */
-function canManage(currentAdmin: any, target: any, rankings: { departments: string[], jobTitles: string[] }) {
+function canManage(currentAdmin: any, target: any, rankings: { departments: string[], jobTitles: string[] }, visibility: VisibilityMap) {
   if (!currentAdmin) return false;
   if (currentAdmin.id === target.id) return true; // Can manage yourself
-
-  // Rule 0: Super Admins can manage EVERYONE
   if (currentAdmin.role === 'superadmin') return true;
 
-  // Rule 1: Admins can ALWAYS manage Employees
+  // Check visibility map first
+  const mySettings = visibility[currentAdmin.department] || { sees: [currentAdmin.department], sees_jobs: true, sees_profiles: true };
+  const canSeeDept = mySettings.sees.includes(target.department);
+  if (!canSeeDept) return false;
+
+  // Rule 1: Admins can ALWAYS manage Employees in allowed depts
   if (target.role === 'employee') return true;
 
   // Rule 2: If both are Admins, check hierarchy
   const adminDeptRank = getRank(currentAdmin.department, rankings.departments);
   const targetDeptRank = getRank(target.department, rankings.departments);
-  
+
   if (adminDeptRank < targetDeptRank) return true;
   if (adminDeptRank > targetDeptRank) return false;
-  
+
   // Same department rank, check job title rank
   const adminJobRank = getRank(currentAdmin.job_title, rankings.jobTitles);
   const targetJobRank = getRank(target.job_title, rankings.jobTitles);
-  
+
   return adminJobRank < targetJobRank;
 }
 
-/** Robust Autocomplete that allows typing directly or picking existing items */
-function TextAutocomplete({ 
-  value, 
-  onChange, 
-  options 
-}: { 
-  value: string; 
-  onChange: (v: string) => void; 
-  options: string[];
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <div className="relative w-full cursor-text" onClick={() => setOpen(true)}>
-          <Input
-            value={value}
-            onChange={(e) => {
-              onChange(e.target.value);
-              if (!open) setOpen(true);
-            }}
-            placeholder="Search or type new..."
-            className="w-full pr-8"
-          />
-          <ChevronsUpDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
-        </div>
-      </PopoverTrigger>
-      <PopoverContent className="p-0 w-[--radix-popover-trigger-width]" align="start">
-        <Command>
-          <CommandInput 
-            placeholder="Search existing..." 
-            value={value}
-            onValueChange={onChange}
-          />
-          <CommandList className="max-h-[200px]">
-            <CommandEmpty className="py-2 px-4 text-xs text-muted-foreground italic">
-              No existing matches. Press Enter or click away to use "{value}"
-            </CommandEmpty>
-            <CommandGroup heading="Existing Keywords">
-              {options.map((t) => (
-                <CommandItem
-                  key={t}
-                  value={t}
-                  onSelect={(v) => {
-                    onChange(v);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value.toLowerCase() === t.toLowerCase() ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  {t}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
+function canViewProfile(currentAdmin: any, target: any, visibility: VisibilityMap) {
+  if (currentAdmin.id === target.id) return true;
+  if (currentAdmin.role === 'superadmin') return true;
+  const mySettings = visibility[currentAdmin.department];
+  if (!mySettings) return true; // Default to true if not set
+  return mySettings.sees_profiles && mySettings.sees.includes(target.department);
 }
+
+function canSeeJobTitle(currentAdmin: any, target: any, visibility: VisibilityMap) {
+  if (currentAdmin.id === target.id) return true;
+  if (currentAdmin.role === 'superadmin') return true;
+  const mySettings = visibility[currentAdmin.department];
+  if (!mySettings) return true;
+  return mySettings.sees_jobs && mySettings.sees.includes(target.department);
+}
+
 
 export default function AdminEmployees() {
   const { user, profile } = useApp();
@@ -202,37 +155,61 @@ export default function AdminEmployees() {
   const { data: rankings = { departments: [], jobTitles: [] } } = useRankings();
   const updateRankings = useUpdateRankings();
   const deleteMetadata = useDeleteMetadata();
-  
+
+  const { data: visibility = {} } = useVisibilitySettings();
+  const updateVisibility = useUpdateVisibilitySettings();
+
   const [openRankings, setOpenRankings] = useState(false);
-  const [rankingsForm, setRankingsForm] = useState<{ departments: string[], jobTitles: string[] }>({ departments: [], jobTitles: [] });
+  const [rankingsForm, setRankingsForm] = useState<Rankings>({ departments: [], jobTitles: [], deptToJobs: {} });
+  const [visibilityForm, setVisibilityForm] = useState<VisibilityMap>({});
+  const [selectedRankDept, setSelectedRankDept] = useState<string | null>(null);
 
   // Filtered options for the Add/Edit form based on hierarchy
   const availableDeptOptions = useMemo(() => {
-    if (!profile || isSuperAdmin) return departments;
+    const source = rankings.departments.length > 0 ? rankings.departments : departments;
+    if (!profile || isSuperAdmin) return source;
     const adminDeptRank = getRank(profile.department, rankings.departments);
     // Only show departments that are at or below the admin's rank (larger rank number)
-    return departments.filter(d => getRank(d, rankings.departments) >= adminDeptRank);
-  }, [departments, profile, rankings.departments, isSuperAdmin]);
+    return source.filter(d => getRank(d, rankings.departments) >= adminDeptRank);
+  }, [rankings.departments, departments, profile, isSuperAdmin]);
 
   const availableJobOptions = useMemo(() => {
-    if (!profile || isSuperAdmin) return jobTitles;
+    const dept = form.department || profile?.department;
+    let source = jobTitles;
+
+    if (dept && rankings.deptToJobs?.[dept] && rankings.deptToJobs[dept].length > 0) {
+      source = rankings.deptToJobs[dept];
+    } else if (rankings.jobTitles.length > 0) {
+      source = rankings.jobTitles;
+    }
+
+    if (!profile || isSuperAdmin) return source;
+
+    // Check hierarchy if needed
     const adminDeptRank = getRank(profile.department, rankings.departments);
     const targetDeptRank = getRank(form.department, rankings.departments);
 
-    // If they are picking their own department (or a same-rank one), limit the job titles
     if (adminDeptRank === targetDeptRank) {
       const adminJobRank = getRank(profile.job_title, rankings.jobTitles);
-      return jobTitles.filter(j => getRank(j, rankings.jobTitles) >= adminJobRank);
+      return source.filter(j => getRank(j, rankings.jobTitles) >= adminJobRank);
     }
-    
-    return jobTitles;
-  }, [jobTitles, profile, rankings, form.department, isSuperAdmin]);
+
+    return source;
+  }, [jobTitles, rankings, profile, form.department, isSuperAdmin]);
 
   const filteredAndSorted = useMemo(() => {
     const filtered = employees.filter(e => {
       // 1. Stealth Mode: Super Admins are invisible to everyone except themselves
       if (e.role === 'superadmin' && e.id !== profile?.id) {
         return false;
+      }
+
+      // 2. Security Map & Hierarchy
+      if (profile && !canManage(profile, e, rankings, visibility) && e.id !== profile.id && !isSuperAdmin) {
+        // If they can't even "Manage", should they be visible?
+        // Let's check if they can at least "See" the dept
+        const myS = visibility[profile.department] || { sees: [profile.department] };
+        if (!myS.sees.includes(e.department || "")) return false;
       }
 
       const email = e.email ?? "";
@@ -256,7 +233,7 @@ export default function AdminEmployees() {
 
       return a.name.localeCompare(b.name);
     });
-  }, [employees, q, titleFilter, deptFilter, rankings, isSuperAdmin]);
+  }, [employees, q, titleFilter, deptFilter, rankings, isSuperAdmin, visibility, profile]);
 
   const groupedByDept = useMemo(() => {
     const groups: { dept: string, emps: typeof filteredAndSorted }[] = [];
@@ -301,7 +278,10 @@ export default function AdminEmployees() {
         ...(emailChanged ? { newEmail: form.email } : {}),
         ...(passwordChanged ? { newPassword: form.password } : {}),
       }, {
-        onSuccess: () => toast.success("Employee updated" + (emailChanged || passwordChanged ? " (auth credentials synced)" : "")),
+        onSuccess: (data: any) => {
+          setEditing(null);
+          toast.success(data.message || ("Employee updated" + (emailChanged || passwordChanged ? " (auth credentials synced)" : "")));
+        },
         onError: (err: any) => toast.error(err?.message ?? "Update failed"),
       });
     } else {
@@ -435,23 +415,26 @@ export default function AdminEmployees() {
 
           {/* Grid / Table toggle */}
           <div className="hidden md:flex rounded-lg border p-0.5 bg-muted/40">
-            <button onClick={() => setView("grid")}  className={`px-2.5 py-1 text-xs rounded-md ${view==="grid"?"bg-background shadow-soft":"text-muted-foreground"}`}>Grid</button>
-            <button onClick={() => setView("table")} className={`px-2.5 py-1 text-xs rounded-md ${view==="table"?"bg-background shadow-soft":"text-muted-foreground"}`}>Table</button>
+            <button onClick={() => setView("grid")} className={`px-2.5 py-1 text-xs rounded-md ${view === "grid" ? "bg-background shadow-soft" : "text-muted-foreground"}`}>Grid</button>
+            <button onClick={() => setView("table")} className={`px-2.5 py-1 text-xs rounded-md ${view === "table" ? "bg-background shadow-soft" : "text-muted-foreground"}`}>Table</button>
           </div>
 
           {/* Ranking Settings (Admin Only) */}
           {isAdmin && (
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setRankingsForm({
                   departments: [...rankings.departments],
-                  jobTitles: [...rankings.jobTitles]
+                  jobTitles: [...rankings.jobTitles],
+                  deptToJobs: rankings.deptToJobs ? { ...rankings.deptToJobs } : {}
                 });
+                setVisibilityForm({ ...visibility });
+                setSelectedRankDept(rankings.departments[0] || null);
                 setOpenRankings(true);
               }}
             >
-              <ListOrdered className="h-4 w-4 mr-2" /> Rank Display
+              <Settings2 className="h-4 w-4 mr-2" /> Control Center
             </Button>
           )}
 
@@ -498,23 +481,28 @@ export default function AdminEmployees() {
                     </select>
                   </div>
 
-                   {/* ── Job title creatable combobox ─────────────────────────── */}
                   <div className="space-y-1.5 flex flex-col">
                     <Label>Job title</Label>
-                    <TextAutocomplete 
-                      value={form.jobTitle} 
-                      onChange={v => setForm({ ...form, jobTitle: v })} 
-                      options={availableJobOptions} 
-                    />
+                    <select
+                      value={form.jobTitle}
+                      onChange={e => setForm({ ...form, jobTitle: e.target.value })}
+                      className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="">Select job title...</option>
+                      {availableJobOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                   </div>
 
                   <div className="space-y-1.5 flex flex-col">
                     <Label>Department</Label>
-                    <TextAutocomplete 
-                      value={form.department} 
-                      onChange={v => setForm({ ...form, department: v })} 
-                      options={availableDeptOptions} 
-                    />
+                    <select
+                      value={form.department}
+                      onChange={e => setForm({ ...form, department: e.target.value })}
+                      className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="">Select department...</option>
+                      {availableDeptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
                   </div>
 
                   <DialogFooter className="sm:col-span-2 mt-2">
@@ -529,59 +517,155 @@ export default function AdminEmployees() {
       </div>
 
       <Dialog open={openRankings} onOpenChange={setOpenRankings}>
-        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Custom Display Ranking</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-primary" /> Administrative Control Center</DialogTitle>
             <DialogDescription>
-              Define the exact priority order for departments and job titles. 
-              Items at the top of the list will be ranked higher.
+              Manage organizational priority and departmental visibility restrictions.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-6 py-4">
-            <div className="space-y-2">
-              <Label className="text-base font-semibold">Department Priority</Label>
-              <RankListBuilder 
-                items={rankingsForm.departments}
-                available={departments}
-                adminRank={isSuperAdmin ? -1 : getRank(profile?.department, rankings.departments)}
-                onChange={v => setRankingsForm({ ...rankingsForm, departments: v })}
-                onDeleteGlobal={v => deleteMetadata.mutate({ type: 'department', value: v }, {
-                  onSuccess: () => {
-                    toast.success(`Department "${v}" deleted globally`);
-                    setRankingsForm(prev => ({ ...prev, departments: prev.departments.filter(x => x !== v) }));
-                  },
-                  onError: (err: any) => toast.error(err.message || "Failed to delete department")
-                })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-base font-semibold">Job Title Priority</Label>
-              <RankListBuilder 
-                items={rankingsForm.jobTitles}
-                available={jobTitles}
-                adminRank={isSuperAdmin ? -1 : getRank(profile?.job_title, rankings.jobTitles)}
-                onChange={v => setRankingsForm({ ...rankingsForm, jobTitles: v })}
-                onDeleteGlobal={v => deleteMetadata.mutate({ type: 'job_title', value: v }, {
-                  onSuccess: () => {
-                    toast.success(`Job Title "${v}" deleted globally`);
-                    setRankingsForm(prev => ({ ...prev, jobTitles: prev.jobTitles.filter(x => x !== v) }));
-                  },
-                  onError: (err: any) => toast.error(err.message || "Failed to delete job title")
-                })}
-              />
-            </div>
-          </div>
-          <DialogFooter>
+
+          <Tabs defaultValue="rankings" className="mt-4">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="rankings" className="flex items-center gap-2"><ListOrdered className="h-4 w-4" /> Rankings</TabsTrigger>
+              <TabsTrigger value="security" className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Access Matrix</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="rankings" className="space-y-6 py-4">
+              <div className="grid gap-6 md:grid-cols-[1fr_2fr]">
+                {/* Left: Department List (Master) */}
+                <div className="space-y-4 border-r pr-6">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-semibold">1. Rank Departments</Label>
+                    <CreateMetadataButton
+                      label="Dept"
+                      onAdd={v => setRankingsForm(prev => ({ ...prev, departments: [...prev.departments, normalize(v)] }))}
+                    />
+                  </div>
+                  <RankListBuilder
+                    items={rankingsForm.departments}
+                    available={departments}
+                    adminRank={isSuperAdmin ? -1 : getRank(profile?.department, rankings.departments)}
+                    onChange={v => setRankingsForm({ ...rankingsForm, departments: v })}
+                    onDeleteGlobal={v => deleteMetadata.mutate({ type: 'department', value: v }, {
+                      onSuccess: () => {
+                        toast.success(`Department "${v}" deleted`);
+                        setRankingsForm(prev => ({ ...prev, departments: prev.departments.filter(x => x !== v) }));
+                        if (selectedRankDept === v) setSelectedRankDept(null);
+                      }
+                    })}
+                  />
+                  <div className="pt-4 border-t">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2">Select to Manage Roles</p>
+                    <div className="space-y-1">
+                      {rankingsForm.departments.map(d => (
+                        <button
+                          key={d}
+                          onClick={() => setSelectedRankDept(d)}
+                          className={cn(
+                            "w-full flex items-center justify-between px-3 py-2 text-sm rounded-md transition-all text-left",
+                            selectedRankDept === d ? "bg-primary text-white shadow-soft" : "hover:bg-muted"
+                          )}
+                        >
+                          <span className="truncate">{d}</span>
+                          <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Job Title List for Selected Dept (Detail) */}
+                <div className="space-y-4">
+                  {selectedRankDept ? (
+                    <div className="animate-in fade-in slide-in-from-right-4">
+                      <div className="flex items-center justify-between mb-4">
+                        <div>
+                          <h3 className="font-semibold flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-primary" /> {selectedRankDept} Roles
+                          </h3>
+                          <p className="text-xs text-muted-foreground">Define and rank roles within this department.</p>
+                        </div>
+                        <CreateMetadataButton
+                          label="Role"
+                          onAdd={v => {
+                            const normalized = normalize(v);
+                            setRankingsForm(prev => {
+                              const existing = prev.deptToJobs?.[selectedRankDept] || [];
+                              return {
+                                ...prev,
+                                jobTitles: [...prev.jobTitles, normalized],
+                                deptToJobs: {
+                                  ...prev.deptToJobs,
+                                  [selectedRankDept]: [...existing, normalized]
+                                }
+                              };
+                            });
+                          }}
+                        />
+                      </div>
+                      <RankListBuilder
+                        items={rankingsForm.deptToJobs?.[selectedRankDept] || []}
+                        available={jobTitles}
+                        adminRank={isSuperAdmin ? -1 : getRank(profile?.job_title, rankings.jobTitles)}
+                        onChange={v => setRankingsForm(prev => ({
+                          ...prev,
+                          deptToJobs: {
+                            ...prev.deptToJobs,
+                            [selectedRankDept]: v
+                          }
+                        }))}
+                        onDeleteGlobal={v => deleteMetadata.mutate({ type: 'job_title', value: v }, {
+                          onSuccess: () => {
+                            toast.success(`Role "${v}" deleted`);
+                            setRankingsForm(prev => ({
+                              ...prev,
+                              jobTitles: prev.jobTitles.filter(x => x !== v),
+                              deptToJobs: Object.fromEntries(
+                                Object.entries(prev.deptToJobs || {}).map(([k, roles]) => [k, (roles as string[]).filter(r => r !== v)])
+                              )
+                            }));
+                          }
+                        })}
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex h-40 items-center justify-center text-muted-foreground italic text-sm border-2 border-dashed rounded-lg">
+                      Select a department on the left to manage its roles.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="security" className="py-4">
+              <div className="rounded-lg border bg-muted/20 p-1 mb-6">
+                <p className="text-xs text-muted-foreground p-3 italic">
+                  Define which departments are "Visible" to each other. For each viewer department, check the boxes for which target departments they can see, and whether they can see Job Titles or Profile Details.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <AccessMatrix
+                  departments={rankingsForm.departments.length > 0 ? rankingsForm.departments : departments}
+                  value={visibilityForm}
+                  onChange={setVisibilityForm}
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter className="mt-6 border-t pt-4">
             <Button variant="outline" onClick={() => setOpenRankings(false)}>Cancel</Button>
             <Button onClick={() => {
-              updateRankings.mutate(rankingsForm, {
+              updateRankings.mutate(rankingsForm);
+              updateVisibility.mutate(visibilityForm, {
                 onSuccess: () => {
                   setOpenRankings(false);
-                  toast.success("Global ranking preferences saved!");
+                  toast.success("Security and Ranking settings updated!");
                 }
               });
-            }} className="bg-gradient-primary text-white" disabled={updateRankings.isPending}>
-              {updateRankings.isPending ? "Saving..." : "Save Rankings"}
+            }} className="bg-gradient-primary text-white" disabled={updateRankings.isPending || updateVisibility.isPending}>
+              {updateRankings.isPending || updateVisibility.isPending ? "Saving..." : "Save All Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -608,17 +692,21 @@ export default function AdminEmployees() {
                   const total = tasks.filter(t => t.assignee_id === e.id).length;
                   const done = tasks.filter(t => t.assignee_id === e.id && t.status === "completed").length;
                   const pct = total ? Math.round((done / total) * 100) : 0;
+                  const canM = profile ? canManage(profile, e, rankings, visibility) : false;
+                  const canV = profile ? canViewProfile(profile, e, visibility) : false;
+                  const canJ = profile ? canSeeJobTitle(profile, e, visibility) : true;
+
                   return (
                     <div key={e.id} className="surface-card hover-lift p-5">
                       <div className="flex items-start justify-between">
                         <UserAvatar name={e.name} color={e.avatar_color ?? undefined} size="lg" />
                         <div className="flex gap-1">
-                          {isAdmin && (
+                          {isAdmin && canV && (
                             <Button asChild size="icon" variant="ghost" className="h-8 w-8" aria-label="View">
                               <Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link>
                             </Button>
                           )}
-                          {isAdmin && canManage(profile, e, rankings) && (
+                          {isAdmin && canM && (
                             <>
                               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(e)} aria-label="Edit">
                                 <Pencil className="h-4 w-4" />
@@ -629,14 +717,14 @@ export default function AdminEmployees() {
                         </div>
                       </div>
                       <div className="mt-4">
-                        {isAdmin ? (
+                        {isAdmin && canV ? (
                           <Link to={`/admin/employees/${e.id}`} className="font-display text-lg font-semibold leading-tight hover:underline">{e.name}</Link>
                         ) : (
                           <span className="font-display text-lg font-semibold leading-tight">{e.name}</span>
                         )}
                         <div className="text-sm text-muted-foreground">
-                          {e.job_title ?? (isAdmin ? "Employee" : "")}
-                          {isAdmin && ` • ${e.role === 'admin' ? 'Admin' : (e.role === 'superadmin' ? 'Super Admin' : 'Employee')}`}
+                          {canJ ? (e.job_title ?? "Employee") : "—"}
+                          {isAdmin && canM && ` • ${e.role === 'admin' ? 'Admin' : (e.role === 'superadmin' ? 'Super Admin' : 'Employee')}`}
                         </div>
                       </div>
                       <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
@@ -682,31 +770,37 @@ export default function AdminEmployees() {
               <tbody>
                 {filteredAndSorted.map(e => {
                   const total = tasks.filter(t => t.assignee_id === e.id).length;
-                  const done  = tasks.filter(t => t.assignee_id === e.id && t.status === "completed").length;
+                  const done = tasks.filter(t => t.assignee_id === e.id && t.status === "completed").length;
+                  const canM = profile ? canManage(profile, e, rankings, visibility) : false;
+                  const canV = profile ? canViewProfile(profile, e, visibility) : false;
+                  const canJ = profile ? canSeeJobTitle(profile, e, visibility) : true;
+
                   return (
                     <tr key={e.id} className="border-t hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <UserAvatar name={e.name} color={e.avatar_color ?? undefined} size="sm" />
                           <div>
-                            {isAdmin ? (
+                            {isAdmin && canV ? (
                               <Link to={`/admin/employees/${e.id}`} className="font-medium hover:underline">{e.name}</Link>
                             ) : (
                               <span className="font-medium">{e.name}</span>
                             )}
-                            {isAdmin && <div className="text-xs text-muted-foreground">{e.role === 'admin' ? 'Admin' : 'Employee'}</div>}
+                            {isAdmin && canM && <div className="text-xs text-muted-foreground">{e.role === 'admin' ? 'Admin' : 'Employee'}</div>}
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs">{e.username}</td>
-                      <td className="px-4 py-3">{e.job_title ?? "—"}</td>
+                      <td className="px-4 py-3">{canJ ? (e.job_title ?? "—") : "—"}</td>
                       <td className="px-4 py-3">{e.department ?? "—"}</td>
                       <td className="px-4 py-3">{done}/{total}</td>
                       {isAdmin && (
                         <td className="px-4 py-3">
                           <div className="flex justify-end gap-1">
-                            <Button asChild size="icon" variant="ghost" className="h-8 w-8"><Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link></Button>
-                            {canManage(profile, e, rankings) && (
+                            {canV && (
+                              <Button asChild size="icon" variant="ghost" className="h-8 w-8"><Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link></Button>
+                            )}
+                            {canM && (
                               <>
                                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(e)}><Pencil className="h-4 w-4" /></Button>
                                 <DeleteEmpButton onConfirm={() => { deleteEmployee.mutate(e.id); toast.success("Employee deleted"); }} name={e.name} />
@@ -727,6 +821,120 @@ export default function AdminEmployees() {
         </div>
       )}
     </div>
+  );
+}
+
+function CreateMetadataButton({ label, onAdd }: { label: string, onAdd: (val: string) => void }) {
+  const [val, setVal] = useState("");
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-8 gap-1 text-primary hover:text-primary hover:bg-primary/5">
+          <Plus className="h-3.5 w-3.5" /> Add {label}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-60 p-3">
+        <div className="space-y-3">
+          <Label className="text-xs">New {label} Name</Label>
+          <Input
+            value={val}
+            onChange={e => setVal(e.target.value)}
+            placeholder={`Enter ${label.toLowerCase()}...`}
+            autoFocus
+            onKeyDown={e => {
+              if (e.key === 'Enter' && val.trim()) {
+                onAdd(val);
+                setVal("");
+                setOpen(false);
+              }
+            }}
+          />
+          <Button
+            className="w-full h-8 text-xs bg-primary text-white"
+            disabled={!val.trim()}
+            onClick={() => {
+              onAdd(val);
+              setVal("");
+              setOpen(false);
+            }}
+          >
+            Create
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function AccessMatrix({ departments, value, onChange }: { departments: string[], value: VisibilityMap, onChange: (v: VisibilityMap) => void }) {
+  return (
+    <table className="w-full text-sm border-collapse">
+      <thead>
+        <tr className="bg-muted/50 border-y">
+          <th className="px-4 py-3 text-left font-semibold">Viewer Department</th>
+          <th className="px-4 py-3 text-left font-semibold">Visible Departments (Directory)</th>
+          <th className="px-4 py-3 text-center font-semibold">Job Titles?</th>
+          <th className="px-4 py-3 text-center font-semibold">Profiles?</th>
+        </tr>
+      </thead>
+      <tbody>
+        {departments.map(viewer => {
+          const settings = value[viewer] || { sees: [viewer], sees_jobs: true, sees_profiles: true };
+
+          const toggleDept = (dept: string) => {
+            const newSees = settings.sees.includes(dept)
+              ? settings.sees.filter(d => d !== dept)
+              : [...settings.sees, dept];
+            onChange({ ...value, [viewer]: { ...settings, sees: newSees } });
+          };
+
+          const toggleBool = (key: 'sees_jobs' | 'sees_profiles') => {
+            onChange({ ...value, [viewer]: { ...settings, [key]: !settings[key] } });
+          };
+
+          return (
+            <tr key={viewer} className="border-b hover:bg-muted/10 transition-colors">
+              <td className="px-4 py-4 font-bold text-primary">{viewer}</td>
+              <td className="px-4 py-4">
+                <div className="flex flex-wrap gap-2">
+                  {departments.map(target => (
+                    <button
+                      key={target}
+                      onClick={() => toggleDept(target)}
+                      className={cn(
+                        "px-2 py-1 rounded-md text-[11px] font-medium border transition-all",
+                        settings.sees.includes(target)
+                          ? "bg-primary/10 border-primary/40 text-primary shadow-sm"
+                          : "bg-background border-muted text-muted-foreground opacity-60 hover:opacity-100"
+                      )}
+                    >
+                      {target}
+                    </button>
+                  ))}
+                </div>
+              </td>
+              <td className="px-4 py-4 text-center">
+                <input
+                  type="checkbox"
+                  checked={settings.sees_jobs}
+                  onChange={() => toggleBool('sees_jobs')}
+                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+              </td>
+              <td className="px-4 py-4 text-center">
+                <input
+                  type="checkbox"
+                  checked={settings.sees_profiles}
+                  onChange={() => toggleBool('sees_profiles')}
+                  className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
@@ -754,16 +962,16 @@ function DeleteEmpButton({ onConfirm, name }: { onConfirm: () => void; name: str
   );
 }
 
-function SortableItem({ 
-  id, 
-  item, 
-  onRemove, 
+function SortableItem({
+  id,
+  item,
+  onRemove,
   onDeleteGlobal,
   disabled
-}: { 
-  id: string, 
-  item: string, 
-  onRemove: () => void, 
+}: {
+  id: string,
+  item: string,
+  onRemove: () => void,
   onDeleteGlobal?: (item: string) => void,
   disabled?: boolean
 }) {
@@ -783,17 +991,17 @@ function SortableItem({
   };
 
   return (
-    <div 
-      ref={setNodeRef} 
-      style={style} 
+    <div
+      ref={setNodeRef}
+      style={style}
       className={cn(
         "flex items-center gap-2 rounded-lg border bg-background p-2.5 shadow-sm transition-shadow",
         isDragging && "shadow-lg ring-1 ring-primary/20 opacity-80"
       )}
     >
-      <div 
-        {...attributes} 
-        {...listeners} 
+      <div
+        {...attributes}
+        {...listeners}
         className={cn(
           "cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground",
           disabled && "opacity-20 cursor-not-allowed pointer-events-none"
@@ -804,7 +1012,7 @@ function SortableItem({
       <span className={cn("flex-1 text-sm font-medium", disabled && "text-muted-foreground")}>{item}</span>
       <div className="flex items-center gap-1">
         {!disabled && (
-          <button 
+          <button
             type="button"
             onClick={onRemove}
             className="text-muted-foreground hover:text-foreground transition-colors"
@@ -816,7 +1024,7 @@ function SortableItem({
         {onDeleteGlobal && !disabled && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <button 
+              <button
                 type="button"
                 className="text-muted-foreground hover:text-destructive transition-colors ml-1"
                 title="Delete keyword globally"
@@ -828,13 +1036,13 @@ function SortableItem({
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete "{item}" globally?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will remove this keyword from EVERY employee profile that currently has it. 
+                  This will remove this keyword from EVERY employee profile that currently has it.
                   This action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction 
+                <AlertDialogAction
                   onClick={() => onDeleteGlobal(item)}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
@@ -849,21 +1057,21 @@ function SortableItem({
   );
 }
 
-function RankListBuilder({ 
-  items, 
-  available, 
+function RankListBuilder({
+  items,
+  available,
   onChange,
   onDeleteGlobal,
   adminRank
-}: { 
-  items: string[], 
-  available: string[], 
+}: {
+  items: string[],
+  available: string[],
   onChange: (items: string[]) => void;
   onDeleteGlobal?: (item: string) => void;
   adminRank: number;
 }) {
   const unranked = available.filter(a => !items.includes(a));
-  
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -876,9 +1084,7 @@ function RankListBuilder({
     if (over && active.id !== over.id) {
       const oldIndex = items.indexOf(active.id as string);
       const newIndex = items.indexOf(over.id as string);
-      
-      // Prevent moving something into a position above the admin's own rank
-      // Or moving anything if the admin is trying to touch things at/above their level
+
       if (oldIndex <= adminRank || newIndex <= adminRank) {
         toast.error("Hierarchy Protection: You cannot reorder items at or above your own rank.");
         return;
@@ -895,22 +1101,22 @@ function RankListBuilder({
           <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Priority Order</Label>
           <span className="text-[10px] text-muted-foreground italic">Drag to change rankings</span>
         </div>
-        
-        <DndContext 
+
+        <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragEnd={handleDragEnd}
         >
-          <SortableContext 
+          <SortableContext
             items={items}
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-2">
               {items.map((item, idx) => (
-                <SortableItem 
-                  key={item} 
-                  id={item} 
-                  item={item} 
+                <SortableItem
+                  key={item}
+                  id={item}
+                  item={item}
                   disabled={idx <= adminRank}
                   onRemove={() => onChange(items.filter(x => x !== item))}
                   onDeleteGlobal={onDeleteGlobal}
@@ -930,8 +1136,6 @@ function RankListBuilder({
         <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Available (Unranked)</Label>
         <div className="flex flex-wrap gap-2">
           {unranked.map(u => {
-            // New items can only be added if they are below the admin's rank in terms of power
-            // Actually, we'll just allow adding them, they will go to the bottom of the list.
             return (
               <button
                 key={u}

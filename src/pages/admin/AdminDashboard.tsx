@@ -50,18 +50,18 @@ export default function AdminDashboard() {
   // Stealth Mode: Filter out other Super Admins and their tasks
   const employees = useMemo(() => {
     return allEmployees.filter(e => {
-      if (e.role === 'superadmin') return e.id === user?.id;
+      if (e.role === 'superadmin') return e.id === profile?.id;
       return true;
     });
-  }, [allEmployees, user?.id]);
+  }, [allEmployees, profile?.id]);
 
   const tasks = useMemo(() => {
     return allTasks.filter(t => {
       const emp = allEmployees.find(e => e.id === t.assignee_id);
-      if (emp?.role === 'superadmin') return emp.id === user?.id;
+      if (emp?.role === 'superadmin') return emp.id === profile?.id;
       return true;
     });
-  }, [allTasks, allEmployees, user?.id]);
+  }, [allTasks, allEmployees, profile?.id]);
 
   const completed = tasks.filter(t => t.status === "completed").length;
   const pending   = tasks.filter(t => t.status === "pending").length;
@@ -132,6 +132,25 @@ export default function AdminDashboard() {
         <StatCard icon={Clock}         label="Pending"    value={pending + inprog} tone="warning" />
         <StatCard icon={Inbox}         label="Approvals"  value={requested}        tone="info" />
         <StatCard icon={AlertTriangle} label="Overdue"    value={overdue}          tone="destructive" />
+      </div>
+
+      {/* NEW: My Assigned Tasks Section */}
+      <div className="surface-card p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-display text-lg font-semibold flex items-center gap-2">
+            <ListTodo className="h-5 w-5 text-primary" /> My Assigned Tasks
+          </h2>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {tasks.filter(t => t.assignee_id === profile?.id && t.status !== 'completed').map(t => (
+            <TaskCard key={t.id} task={t} canComplete compact />
+          ))}
+          {tasks.filter(t => t.assignee_id === profile?.id && t.status !== 'completed').length === 0 && (
+            <div className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground sm:col-span-2 lg:col-span-3 xl:col-span-4">
+              You have no active tasks assigned to you.
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
