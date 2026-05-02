@@ -28,8 +28,10 @@ export function ProtectedRoute({ children, role }: { children: ReactNode; role: 
   }
 
   // Wrong role → redirect to their own dashboard
-  if (user.role !== role) {
-    return <Navigate to={user.role === "admin" ? "/admin" : "/me"} replace />;
+  // Super Admin counts as an Admin for route purposes
+  const effectiveRole = user.role === "superadmin" ? "admin" : user.role;
+  if (effectiveRole !== role) {
+    return <Navigate to={effectiveRole === "admin" ? "/admin" : "/me"} replace />;
   }
 
   return <>{children}</>;

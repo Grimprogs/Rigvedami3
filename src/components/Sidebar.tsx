@@ -26,7 +26,8 @@ interface Props { open: boolean; onClose: () => void; }
 export function Sidebar({ open, onClose }: Props) {
   const { user, profile, logout } = useApp();
   const { pathname } = useLocation();
-  const items = user?.role === "admin" ? adminNav : empNav;
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+  const items = isAdmin ? adminNav : empNav;
   const { data: tasks = [] } = useTasks(
     user?.role === "employee"
       ? { role: "employee", userId: user.employeeId }
@@ -58,7 +59,7 @@ export function Sidebar({ open, onClose }: Props) {
           <div>
             <div className="font-display text-lg font-bold leading-none">ZTasks</div>
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground mt-0.5">
-              {user?.role === "admin" ? "Admin workspace" : "Employee"}
+              {user?.role === "superadmin" ? "Master Admin" : user?.role === "admin" ? "Admin workspace" : "Employee"}
             </div>
           </div>
         </div>

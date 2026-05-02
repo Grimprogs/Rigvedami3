@@ -1,4 +1,4 @@
-export type Role = "admin" | "employee";
+export type Role = "superadmin" | "admin" | "employee";
 
 export type TaskStatus = "pending" | "in_progress" | "completion_requested" | "completed" | "overdue";
 export type Priority = "low" | "medium" | "high" | "urgent";

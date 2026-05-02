@@ -62,6 +62,13 @@ function canManage(currentAdmin: any, target: any, rankings: { departments: stri
   if (!currentAdmin) return false;
   if (currentAdmin.id === target.id) return true; // Can manage yourself
 
+  // Rule 0: Super Admins can manage EVERYONE
+  if (currentAdmin.role === 'superadmin') return true;
+
+  // Rule 1: Admins can ALWAYS manage Employees
+  if (target.role === 'employee') return true;
+
+  // Rule 2: If both are Admins, check hierarchy
   const adminDeptRank = getRank(currentAdmin.department, rankings.departments);
   const targetDeptRank = getRank(target.department, rankings.departments);
   
@@ -142,8 +149,9 @@ function TextAutocomplete({
 }
 
 export default function AdminEmployees() {
-  const { user } = useApp();
-  const isAdmin = user?.role === 'admin';
+  const { user, profile } = useApp();
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+  const isSuperAdmin = user?.role === 'superadmin';
   const { data: employees = [] } = useProfiles();
   const { data: tasks = [] } = useTasks(isAdmin ? { role: "admin" } : undefined);
   const createEmployee = useCreateEmployee();
@@ -198,8 +206,35 @@ export default function AdminEmployees() {
   const [openRankings, setOpenRankings] = useState(false);
   const [rankingsForm, setRankingsForm] = useState<{ departments: string[], jobTitles: string[] }>({ departments: [], jobTitles: [] });
 
+  // Filtered options for the Add/Edit form based on hierarchy
+  const availableDeptOptions = useMemo(() => {
+    if (!profile || isSuperAdmin) return departments;
+    const adminDeptRank = getRank(profile.department, rankings.departments);
+    // Only show departments that are at or below the admin's rank (larger rank number)
+    return departments.filter(d => getRank(d, rankings.departments) >= adminDeptRank);
+  }, [departments, profile, rankings.departments, isSuperAdmin]);
+
+  const availableJobOptions = useMemo(() => {
+    if (!profile || isSuperAdmin) return jobTitles;
+    const adminDeptRank = getRank(profile.department, rankings.departments);
+    const targetDeptRank = getRank(form.department, rankings.departments);
+
+    // If they are picking their own department (or a same-rank one), limit the job titles
+    if (adminDeptRank === targetDeptRank) {
+      const adminJobRank = getRank(profile.job_title, rankings.jobTitles);
+      return jobTitles.filter(j => getRank(j, rankings.jobTitles) >= adminJobRank);
+    }
+    
+    return jobTitles;
+  }, [jobTitles, profile, rankings, form.department, isSuperAdmin]);
+
   const filteredAndSorted = useMemo(() => {
     const filtered = employees.filter(e => {
+      // 1. Stealth Mode: Super Admins are invisible to non-Super Admins
+      if (e.role === 'superadmin' && !isSuperAdmin) {
+        return false;
+      }
+
       const email = e.email ?? "";
       const dept = e.department ?? "";
       const title = e.job_title ?? "";
@@ -221,7 +256,7 @@ export default function AdminEmployees() {
 
       return a.name.localeCompare(b.name);
     });
-  }, [employees, q, titleFilter, deptFilter, rankings]);
+  }, [employees, q, titleFilter, deptFilter, rankings, isSuperAdmin]);
 
   const groupedByDept = useMemo(() => {
     const groups: { dept: string, emps: typeof filteredAndSorted }[] = [];
@@ -459,16 +494,17 @@ export default function AdminEmployees() {
                     >
                       <option value="employee">Employee</option>
                       <option value="admin">Admin</option>
+                      {isSuperAdmin && <option value="superadmin">Super Admin</option>}
                     </select>
                   </div>
 
-                  {/* ── Job title creatable combobox ─────────────────────────── */}
+                   {/* ── Job title creatable combobox ─────────────────────────── */}
                   <div className="space-y-1.5 flex flex-col">
                     <Label>Job title</Label>
                     <TextAutocomplete 
                       value={form.jobTitle} 
                       onChange={v => setForm({ ...form, jobTitle: v })} 
-                      options={jobTitles} 
+                      options={availableJobOptions} 
                     />
                   </div>
 
@@ -477,7 +513,7 @@ export default function AdminEmployees() {
                     <TextAutocomplete 
                       value={form.department} 
                       onChange={v => setForm({ ...form, department: v })} 
-                      options={departments} 
+                      options={availableDeptOptions} 
                     />
                   </div>
 
@@ -507,6 +543,7 @@ export default function AdminEmployees() {
               <RankListBuilder 
                 items={rankingsForm.departments}
                 available={departments}
+                adminRank={isSuperAdmin ? -1 : getRank(profile?.department, rankings.departments)}
                 onChange={v => setRankingsForm({ ...rankingsForm, departments: v })}
                 onDeleteGlobal={v => deleteMetadata.mutate({ type: 'department', value: v }, {
                   onSuccess: () => {
@@ -522,6 +559,7 @@ export default function AdminEmployees() {
               <RankListBuilder 
                 items={rankingsForm.jobTitles}
                 available={jobTitles}
+                adminRank={isSuperAdmin ? -1 : getRank(profile?.job_title, rankings.jobTitles)}
                 onChange={v => setRankingsForm({ ...rankingsForm, jobTitles: v })}
                 onDeleteGlobal={v => deleteMetadata.mutate({ type: 'job_title', value: v }, {
                   onSuccess: () => {
@@ -580,7 +618,7 @@ export default function AdminEmployees() {
                               <Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link>
                             </Button>
                           )}
-                          {isAdmin && canManage(user, e, rankings) && (
+                          {isAdmin && canManage(profile, e, rankings) && (
                             <>
                               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(e)} aria-label="Edit">
                                 <Pencil className="h-4 w-4" />
@@ -598,7 +636,7 @@ export default function AdminEmployees() {
                         )}
                         <div className="text-sm text-muted-foreground">
                           {e.job_title ?? (isAdmin ? "Employee" : "")}
-                          {isAdmin && ` • ${e.role === 'admin' ? 'Admin' : 'Employee'}`}
+                          {isAdmin && ` • ${e.role === 'admin' ? 'Admin' : (e.role === 'superadmin' ? 'Super Admin' : 'Employee')}`}
                         </div>
                       </div>
                       <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
@@ -668,7 +706,7 @@ export default function AdminEmployees() {
                         <td className="px-4 py-3">
                           <div className="flex justify-end gap-1">
                             <Button asChild size="icon" variant="ghost" className="h-8 w-8"><Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link></Button>
-                            {canManage(user, e, rankings) && (
+                            {canManage(profile, e, rankings) && (
                               <>
                                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(e)}><Pencil className="h-4 w-4" /></Button>
                                 <DeleteEmpButton onConfirm={() => { deleteEmployee.mutate(e.id); toast.success("Employee deleted"); }} name={e.name} />
@@ -720,12 +758,14 @@ function SortableItem({
   id, 
   item, 
   onRemove, 
-  onDeleteGlobal 
+  onDeleteGlobal,
+  disabled
 }: { 
   id: string, 
   item: string, 
   onRemove: () => void, 
-  onDeleteGlobal?: (item: string) => void 
+  onDeleteGlobal?: (item: string) => void,
+  disabled?: boolean
 }) {
   const {
     attributes,
@@ -734,7 +774,7 @@ function SortableItem({
     transform,
     transition,
     isDragging
-  } = useSortable({ id });
+  } = useSortable({ id, disabled });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -751,20 +791,29 @@ function SortableItem({
         isDragging && "shadow-lg ring-1 ring-primary/20 opacity-80"
       )}
     >
-      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground">
+      <div 
+        {...attributes} 
+        {...listeners} 
+        className={cn(
+          "cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground",
+          disabled && "opacity-20 cursor-not-allowed pointer-events-none"
+        )}
+      >
         <GripVertical className="h-4 w-4" />
       </div>
-      <span className="flex-1 text-sm font-medium">{item}</span>
+      <span className={cn("flex-1 text-sm font-medium", disabled && "text-muted-foreground")}>{item}</span>
       <div className="flex items-center gap-1">
-        <button 
-          type="button"
-          onClick={onRemove}
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          title="Remove from priority list"
-        >
-          <X className="h-4 w-4" />
-        </button>
-        {onDeleteGlobal && (
+        {!disabled && (
+          <button 
+            type="button"
+            onClick={onRemove}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            title="Remove from priority list"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+        {onDeleteGlobal && !disabled && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <button 
@@ -804,12 +853,14 @@ function RankListBuilder({
   items, 
   available, 
   onChange,
-  onDeleteGlobal
+  onDeleteGlobal,
+  adminRank
 }: { 
   items: string[], 
   available: string[], 
   onChange: (items: string[]) => void;
   onDeleteGlobal?: (item: string) => void;
+  adminRank: number;
 }) {
   const unranked = available.filter(a => !items.includes(a));
   
@@ -825,6 +876,14 @@ function RankListBuilder({
     if (over && active.id !== over.id) {
       const oldIndex = items.indexOf(active.id as string);
       const newIndex = items.indexOf(over.id as string);
+      
+      // Prevent moving something into a position above the admin's own rank
+      // Or moving anything if the admin is trying to touch things at/above their level
+      if (oldIndex <= adminRank || newIndex <= adminRank) {
+        toast.error("Hierarchy Protection: You cannot reorder items at or above your own rank.");
+        return;
+      }
+
       onChange(arrayMove(items, oldIndex, newIndex));
     }
   }
@@ -847,11 +906,12 @@ function RankListBuilder({
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-2">
-              {items.map((item) => (
+              {items.map((item, idx) => (
                 <SortableItem 
                   key={item} 
                   id={item} 
                   item={item} 
+                  disabled={idx <= adminRank}
                   onRemove={() => onChange(items.filter(x => x !== item))}
                   onDeleteGlobal={onDeleteGlobal}
                 />
@@ -869,16 +929,20 @@ function RankListBuilder({
       <div className="space-y-2">
         <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Available (Unranked)</Label>
         <div className="flex flex-wrap gap-2">
-          {unranked.map(u => (
-            <button
-              key={u}
-              type="button"
-              onClick={() => onChange([...items, u])}
-              className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 px-3 py-1 text-xs font-medium hover:bg-primary/10 hover:text-primary transition-colors"
-            >
-              <Plus className="h-3 w-3" /> {u}
-            </button>
-          ))}
+          {unranked.map(u => {
+            // New items can only be added if they are below the admin's rank in terms of power
+            // Actually, we'll just allow adding them, they will go to the bottom of the list.
+            return (
+              <button
+                key={u}
+                type="button"
+                onClick={() => onChange([...items, u])}
+                className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 px-3 py-1 text-xs font-medium hover:bg-primary/10 hover:text-primary transition-colors"
+              >
+                <Plus className="h-3 w-3" /> {u}
+              </button>
+            );
+          })}
           {unranked.length === 0 && <div className="text-xs text-muted-foreground">All items are ranked.</div>}
         </div>
       </div>

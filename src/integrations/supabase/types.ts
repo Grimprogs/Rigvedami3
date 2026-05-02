@@ -1,7 +1,7 @@
 // src/integrations/supabase/types.ts
 // Database types derived from the SQL schema — no FK constraints
 
-export type UserRole = 'admin' | 'employee';
+export type UserRole = 'superadmin' | 'admin' | 'employee';
 export type TaskStatus = 'pending' | 'in_progress' | 'completion_requested' | 'completed' | 'overdue';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 

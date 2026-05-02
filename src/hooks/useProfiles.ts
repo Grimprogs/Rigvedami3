@@ -103,8 +103,21 @@ export function useUpdateProfile() {
       });
 
       if (error) {
-        throw new Error(error.message || 'Failed to update user via edge function');
+        // Try to parse error message from the response if available
+        let errorMessage = 'Failed to update user via edge function';
+        if (error instanceof Error) {
+          errorMessage = error.message;
+          // @ts-ignore - Supabase might return extra info in some error types
+          if (error.context && typeof error.context.json === 'function') {
+            try {
+              const body = await error.context.json();
+              if (body.error) errorMessage = body.error;
+            } catch (e) { /* ignore */ }
+          }
+        }
+        throw new Error(errorMessage);
       }
+      return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['profiles'] }),
   });

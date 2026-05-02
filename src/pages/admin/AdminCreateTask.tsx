@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useApp } from "@/context/AppContext";
 import { useProfiles } from "@/hooks/useProfiles";
 import { useCreateTask } from "@/hooks/useTasks";
 import { Button } from "@/components/ui/button";
@@ -18,9 +19,15 @@ import { Priority } from "@/data/seed";
 import { toast } from "sonner";
 
 export default function AdminCreateTask() {
-  const { data: employees = [] } = useProfiles();
+  const { user } = useApp();
+  const isSuperAdmin = user?.role === 'superadmin';
+  const { data: allEmployees = [] } = useProfiles();
   const createTask = useCreateTask();
   const navigate = useNavigate();
+
+  const employees = useMemo(() => {
+    return allEmployees.filter(e => isSuperAdmin || e.role !== 'superadmin');
+  }, [allEmployees, isSuperAdmin]);
 
   const today = new Date();
   const inWeek = new Date(); inWeek.setDate(inWeek.getDate() + 7);

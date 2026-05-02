@@ -28,7 +28,8 @@ export default function Login({ role }: { role: Role }) {
       toast.error(res.error ?? "Login failed. Check your credentials.");
       return;
     }
-    const to = role === "admin" ? "/admin" : "/me";
+    const isUserAdmin = res.profile?.role === "admin" || res.profile?.role === "superadmin";
+    const to = isUserAdmin ? "/admin" : "/me";
     const from = (location.state as any)?.from?.pathname;
     navigate(from ?? to, { replace: true });
   };

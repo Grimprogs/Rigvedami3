@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
 import { useTasks } from "@/hooks/useTasks";
+import { useProfiles } from "@/hooks/useProfiles";
 import { TaskCard } from "@/components/TaskCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,16 +11,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 export default function AdminTasks() {
   const { profile } = useApp();
-  const { data: tasks = [] } = useTasks({ role: "admin" });
+  const { data: allTasks = [] } = useTasks({ role: "admin" });
+  const { data: profiles = [] } = useProfiles();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<"all" | any>("all");
   const [priority, setPriority] = useState<"all" | any>("all");
+  const isSuperAdmin = profile?.role === 'superadmin';
 
-  const filtered = useMemo(() => tasks.filter(t =>
-    (status === "all" || t.status === status) &&
-    (priority === "all" || t.priority === priority) &&
-    (q === "" || (t.title && t.title.toLowerCase().includes(q.toLowerCase())) || (t.description && t.description.toLowerCase().includes(q.toLowerCase())))
-  ), [tasks, q, status, priority]);
+  const filtered = useMemo(() => {
+    return allTasks.filter(t => {
+      // 1. Stealth Mode: Hide Super Admin tasks from non-Super Admins
+      if (!isSuperAdmin) {
+        const assignee = profiles.find(p => p.id === t.assignee_id);
+        if (assignee?.role === 'superadmin') return false;
+      }
+
+      // 2. Standard Filters
+      const matchesSearch = q === "" || 
+        (t.title && t.title.toLowerCase().includes(q.toLowerCase())) || 
+        (t.description && t.description.toLowerCase().includes(q.toLowerCase()));
+      const matchesStatus = status === "all" || t.status === status;
+      const matchesPriority = priority === "all" || t.priority === priority;
+      
+      return matchesSearch && matchesStatus && matchesPriority;
+    });
+  }, [allTasks, profiles, q, status, priority, isSuperAdmin]);
 
   return (
     <div className="space-y-6">
