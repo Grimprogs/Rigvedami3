@@ -230,8 +230,8 @@ export default function AdminEmployees() {
 
   const filteredAndSorted = useMemo(() => {
     const filtered = employees.filter(e => {
-      // 1. Stealth Mode: Super Admins are invisible to non-Super Admins
-      if (e.role === 'superadmin' && !isSuperAdmin) {
+      // 1. Stealth Mode: Super Admins are invisible to everyone except themselves
+      if (e.role === 'superadmin' && e.id !== profile?.id) {
         return false;
       }
 

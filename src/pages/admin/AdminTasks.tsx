@@ -20,10 +20,10 @@ export default function AdminTasks() {
 
   const filtered = useMemo(() => {
     return allTasks.filter(t => {
-      // 1. Stealth Mode: Hide Super Admin tasks from non-Super Admins
-      if (!isSuperAdmin) {
-        const assignee = profiles.find(p => p.id === t.assignee_id);
-        if (assignee?.role === 'superadmin') return false;
+      // 1. Stealth Mode: Hide other Super Admin tasks
+      const assignee = profiles.find(p => p.id === t.assignee_id);
+      if (assignee?.role === 'superadmin' && assignee.id !== profile?.id) {
+        return false;
       }
 
       // 2. Standard Filters

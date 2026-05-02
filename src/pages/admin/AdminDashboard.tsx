@@ -47,18 +47,21 @@ export default function AdminDashboard() {
   const { data: allTasks = [] } = useTasks({ role: "admin" });
   const { data: allEmployees = [] } = useProfiles();
 
-  // Stealth Mode: Filter out Super Admins and their tasks for non-Super Admins
+  // Stealth Mode: Filter out other Super Admins and their tasks
   const employees = useMemo(() => {
-    return allEmployees.filter(e => isSuperAdmin || e.role !== 'superadmin');
-  }, [allEmployees, isSuperAdmin]);
+    return allEmployees.filter(e => {
+      if (e.role === 'superadmin') return e.id === user?.id;
+      return true;
+    });
+  }, [allEmployees, user?.id]);
 
   const tasks = useMemo(() => {
     return allTasks.filter(t => {
-      if (isSuperAdmin) return true;
       const emp = allEmployees.find(e => e.id === t.assignee_id);
-      return emp?.role !== 'superadmin';
+      if (emp?.role === 'superadmin') return emp.id === user?.id;
+      return true;
     });
-  }, [allTasks, allEmployees, isSuperAdmin]);
+  }, [allTasks, allEmployees, user?.id]);
 
   const completed = tasks.filter(t => t.status === "completed").length;
   const pending   = tasks.filter(t => t.status === "pending").length;
