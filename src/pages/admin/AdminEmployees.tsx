@@ -52,6 +52,29 @@ function normalize(s: string) {
   return s.trim().replace(/\b\w/g, c => c.toUpperCase());
 }
 
+/** 
+ * Hierarchical Permission Check:
+ * An admin can only manage someone who is BELOW them in the rankings.
+ * Priority 1: Department Rank
+ * Priority 2: Job Title Rank (within the same department)
+ */
+function canManage(currentAdmin: any, target: any, rankings: { departments: string[], jobTitles: string[] }) {
+  if (!currentAdmin) return false;
+  if (currentAdmin.id === target.id) return true; // Can manage yourself
+
+  const adminDeptRank = getRank(currentAdmin.department, rankings.departments);
+  const targetDeptRank = getRank(target.department, rankings.departments);
+  
+  if (adminDeptRank < targetDeptRank) return true;
+  if (adminDeptRank > targetDeptRank) return false;
+  
+  // Same department rank, check job title rank
+  const adminJobRank = getRank(currentAdmin.job_title, rankings.jobTitles);
+  const targetJobRank = getRank(target.job_title, rankings.jobTitles);
+  
+  return adminJobRank < targetJobRank;
+}
+
 /** Robust Autocomplete that allows typing directly or picking existing items */
 function TextAutocomplete({ 
   value, 
@@ -557,7 +580,7 @@ export default function AdminEmployees() {
                               <Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link>
                             </Button>
                           )}
-                          {isAdmin && (
+                          {isAdmin && canManage(user, e, rankings) && (
                             <>
                               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(e)} aria-label="Edit">
                                 <Pencil className="h-4 w-4" />
@@ -644,9 +667,9 @@ export default function AdminEmployees() {
                       {isAdmin && (
                         <td className="px-4 py-3">
                           <div className="flex justify-end gap-1">
-                            {isAdmin && (
+                            <Button asChild size="icon" variant="ghost" className="h-8 w-8"><Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link></Button>
+                            {canManage(user, e, rankings) && (
                               <>
-                                <Button asChild size="icon" variant="ghost" className="h-8 w-8"><Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link></Button>
                                 <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(e)}><Pencil className="h-4 w-4" /></Button>
                                 <DeleteEmpButton onConfirm={() => { deleteEmployee.mutate(e.id); toast.success("Employee deleted"); }} name={e.name} />
                               </>
