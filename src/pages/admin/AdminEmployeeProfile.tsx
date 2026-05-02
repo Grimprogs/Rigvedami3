@@ -3,8 +3,10 @@ import { useProfile } from "@/hooks/useProfiles";
 import { useTasks } from "@/hooks/useTasks";
 import { UserAvatar } from "@/components/UserAvatar";
 import { TaskCard } from "@/components/TaskCard";
-import { ArrowLeft, Mail, Building2, CalendarDays, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Mail, Building2, CalendarDays, CheckCircle2, Clock, AlertTriangle, Download } from "lucide-react";
 import { useApp } from "@/context/AppContext";
+import { Button } from "@/components/ui/button";
+import { downloadCSV, calculateTaskDuration } from "@/lib/csv-export";
 
 export default function AdminEmployeeProfile() {
   const { id } = useParams();
@@ -56,6 +58,30 @@ export default function AdminEmployeeProfile() {
             <div className="text-xs uppercase tracking-wider text-muted-foreground">Performance</div>
             <div className="font-display text-4xl font-bold gradient-text">{pct}%</div>
             <div className="text-xs text-muted-foreground">{done} of {total} tasks completed</div>
+            {isAdmin && my.length > 0 && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-3 w-full text-xs"
+                onClick={() => {
+                  const rows = my.map(t => [
+                    t.title,
+                    t.priority,
+                    t.status,
+                    t.due_date,
+                    t.started_at ? new Date(t.started_at).toLocaleString() : "—",
+                    t.approved_at ? new Date(t.approved_at).toLocaleString() : "—",
+                    calculateTaskDuration(t)
+                  ]);
+                  downloadCSV(`${employee.name.replace(/\s+/g, '_')}_Task_Report`, 
+                    ["Task", "Priority", "Status", "Due Date", "Started At", "Completed At", "Time Taken"], 
+                    rows
+                  );
+                }}
+              >
+                <Download className="mr-2 h-3.5 w-3.5" /> Download Report
+              </Button>
+            )}
           </div>
         </div>
       </div>

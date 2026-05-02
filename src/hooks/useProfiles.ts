@@ -3,7 +3,20 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { createClient } from '@supabase/supabase-js';
 import type { Profile } from '@/integrations/supabase/types';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+// Secondary client for user creation to avoid session swapping in the main client
+const authAdminClient = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
+  }
+});
 
 // -- Queries --
 
@@ -48,10 +61,9 @@ export function useCreateEmployee() {
       name: string; username: string; email: string;
       password: string; department?: string; avatar_color?: string; job_title?: string; role?: string;
     }) => {
-      const { data: { session: adminSession } } = await supabase.auth.getSession();
-      // Create auth user (admin must use service role key in edge function for production)
-      // For now: create via signUp (user will be auto-confirmed if email confirm is off)
-      const { data: authData, error: authErr } = await supabase.auth.signUp({
+      // Use the secondary client to sign up the new user. 
+      // This prevents the main client's session from being swapped.
+      const { data: authData, error: authErr } = await authAdminClient.auth.signUp({
         email: input.email,
         password: input.password,
         options: {
@@ -66,10 +78,6 @@ export function useCreateEmployee() {
         },
       });
       if (authErr) throw authErr;
-      // signUp swaps the active session; restore the admin session if present
-      if (adminSession) {
-        await supabase.auth.setSession(adminSession);
-      }
       return authData;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['profiles'] }),
@@ -115,6 +123,45 @@ export function useDeleteEmployee() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profiles'] });
       qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
+  });
+}
+
+/** 
+ * Admin wipes a department or job title from all users 
+ * (effectively deleting that keyword from the system)
+ */
+export function useDeleteMetadata() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ type, value }: { type: 'department' | 'job_title'; value: string }) => {
+      // 1. Wipe from all profiles
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ [type]: null })
+        .eq(type, value);
+      if (profileError) throw profileError;
+
+      // 2. Wipe from rankings in app_settings to prevent 'ghost' rankings
+      const { data: currentRankings } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'rankings')
+        .maybeSingle();
+      
+      if (currentRankings?.value) {
+        const val = currentRankings.value as { departments: string[], jobTitles: string[] };
+        const key = type === 'department' ? 'departments' : 'jobTitles';
+        const newList = val[key].filter(x => x !== value);
+        
+        await supabase
+          .from('app_settings')
+          .upsert({ key: 'rankings', value: { ...val, [key]: newList } });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['profiles'] });
+      qc.invalidateQueries({ queryKey: ['app_settings', 'rankings'] });
     },
   });
 }

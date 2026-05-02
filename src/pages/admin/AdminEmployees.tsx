@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { useProfiles, useCreateEmployee, useUpdateProfile, useDeleteEmployee } from "@/hooks/useProfiles";
+import { useProfiles, useCreateEmployee, useUpdateProfile, useDeleteEmployee, useDeleteMetadata } from "@/hooks/useProfiles";
 import { useTasks } from "@/hooks/useTasks";
 import { useRankings, useUpdateRankings } from "@/hooks/useSettings";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,24 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useApp } from "@/context/AppContext";
+import {
+  DndContext, 
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { GripVertical } from "lucide-react";
 
 const empty = { name: "", username: "", password: "", email: "", jobTitle: "", department: "", role: "employee" };
 
@@ -46,47 +64,57 @@ function TextAutocomplete({
 }) {
   const [open, setOpen] = useState(false);
 
-  const filtered = useMemo(() => {
-    if (!value) return options;
-    const q = value.toLowerCase();
-    return options.filter(o => o.toLowerCase().includes(q) && o !== value);
-  }, [value, options]);
-
   return (
-    <div className="relative w-full">
-      <Input
-        value={value}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setOpen(true);
-        }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 200)}
-        placeholder="E.g. Designer, Developer..."
-        className="w-full pr-8"
-      />
-      <ChevronsUpDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
-      
-      {open && filtered.length > 0 && (
-        <div className="absolute top-full left-0 mt-1 w-full z-50 rounded-md border bg-popover text-popover-foreground shadow-md outline-none animate-in fade-in-0 zoom-in-95">
-          <div className="max-h-[200px] overflow-auto p-1">
-            {filtered.map(t => (
-              <div
-                key={t}
-                onClick={() => {
-                  onChange(t);
-                  setOpen(false);
-                }}
-                className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-              >
-                <Check className={cn("absolute left-2 h-4 w-4", value.toLowerCase() === t.toLowerCase() ? "opacity-100" : "opacity-0")} />
-                {t}
-              </div>
-            ))}
-          </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div className="relative w-full cursor-text" onClick={() => setOpen(true)}>
+          <Input
+            value={value}
+            onChange={(e) => {
+              onChange(e.target.value);
+              if (!open) setOpen(true);
+            }}
+            placeholder="Search or type new..."
+            className="w-full pr-8"
+          />
+          <ChevronsUpDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 opacity-50 pointer-events-none" />
         </div>
-      )}
-    </div>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width]" align="start">
+        <Command>
+          <CommandInput 
+            placeholder="Search existing..." 
+            value={value}
+            onValueChange={onChange}
+          />
+          <CommandList className="max-h-[200px]">
+            <CommandEmpty className="py-2 px-4 text-xs text-muted-foreground italic">
+              No existing matches. Press Enter or click away to use "{value}"
+            </CommandEmpty>
+            <CommandGroup heading="Existing Keywords">
+              {options.map((t) => (
+                <CommandItem
+                  key={t}
+                  value={t}
+                  onSelect={(v) => {
+                    onChange(v);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      value.toLowerCase() === t.toLowerCase() ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  {t}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -142,6 +170,7 @@ export default function AdminEmployees() {
   // ── Filter & Sort employees ───────────────────────────────────────────────
   const { data: rankings = { departments: [], jobTitles: [] } } = useRankings();
   const updateRankings = useUpdateRankings();
+  const deleteMetadata = useDeleteMetadata();
   
   const [openRankings, setOpenRankings] = useState(false);
   const [rankingsForm, setRankingsForm] = useState<{ departments: string[], jobTitles: string[] }>({ departments: [], jobTitles: [] });
@@ -456,6 +485,13 @@ export default function AdminEmployees() {
                 items={rankingsForm.departments}
                 available={departments}
                 onChange={v => setRankingsForm({ ...rankingsForm, departments: v })}
+                onDeleteGlobal={v => deleteMetadata.mutate({ type: 'department', value: v }, {
+                  onSuccess: () => {
+                    toast.success(`Department "${v}" deleted globally`);
+                    setRankingsForm(prev => ({ ...prev, departments: prev.departments.filter(x => x !== v) }));
+                  },
+                  onError: (err: any) => toast.error(err.message || "Failed to delete department")
+                })}
               />
             </div>
             <div className="space-y-2">
@@ -464,6 +500,13 @@ export default function AdminEmployees() {
                 items={rankingsForm.jobTitles}
                 available={jobTitles}
                 onChange={v => setRankingsForm({ ...rankingsForm, jobTitles: v })}
+                onDeleteGlobal={v => deleteMetadata.mutate({ type: 'job_title', value: v }, {
+                  onSuccess: () => {
+                    toast.success(`Job Title "${v}" deleted globally`);
+                    setRankingsForm(prev => ({ ...prev, jobTitles: prev.jobTitles.filter(x => x !== v) }));
+                  },
+                  onError: (err: any) => toast.error(err.message || "Failed to delete job title")
+                })}
               />
             </div>
           </div>
@@ -509,9 +552,11 @@ export default function AdminEmployees() {
                       <div className="flex items-start justify-between">
                         <UserAvatar name={e.name} color={e.avatar_color ?? undefined} size="lg" />
                         <div className="flex gap-1">
-                          <Button asChild size="icon" variant="ghost" className="h-8 w-8" aria-label="View">
-                            <Link to={`/${isAdmin ? 'admin' : 'me'}/employees/${e.id}`}><Eye className="h-4 w-4" /></Link>
-                          </Button>
+                          {isAdmin && (
+                            <Button asChild size="icon" variant="ghost" className="h-8 w-8" aria-label="View">
+                              <Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link>
+                            </Button>
+                          )}
                           {isAdmin && (
                             <>
                               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(e)} aria-label="Edit">
@@ -523,8 +568,15 @@ export default function AdminEmployees() {
                         </div>
                       </div>
                       <div className="mt-4">
-                        <Link to={`/${isAdmin ? 'admin' : 'me'}/employees/${e.id}`} className="font-display text-lg font-semibold leading-tight hover:underline">{e.name}</Link>
-                        <div className="text-sm text-muted-foreground">{e.job_title ?? "Employee"} • {e.role === 'admin' ? 'Admin' : 'Employee'}</div>
+                        {isAdmin ? (
+                          <Link to={`/admin/employees/${e.id}`} className="font-display text-lg font-semibold leading-tight hover:underline">{e.name}</Link>
+                        ) : (
+                          <span className="font-display text-lg font-semibold leading-tight">{e.name}</span>
+                        )}
+                        <div className="text-sm text-muted-foreground">
+                          {e.job_title ?? (isAdmin ? "Employee" : "")}
+                          {isAdmin && ` • ${e.role === 'admin' ? 'Admin' : 'Employee'}`}
+                        </div>
                       </div>
                       <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
                         <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5" /> {e.email || "—"}</div>
@@ -576,8 +628,12 @@ export default function AdminEmployees() {
                         <div className="flex items-center gap-3">
                           <UserAvatar name={e.name} color={e.avatar_color ?? undefined} size="sm" />
                           <div>
-                            <Link to={`/admin/employees/${e.id}`} className="font-medium hover:underline">{e.name}</Link>
-                            <div className="text-xs text-muted-foreground">{e.role === 'admin' ? 'Admin' : 'Employee'}</div>
+                            {isAdmin ? (
+                              <Link to={`/admin/employees/${e.id}`} className="font-medium hover:underline">{e.name}</Link>
+                            ) : (
+                              <span className="font-medium">{e.name}</span>
+                            )}
+                            {isAdmin && <div className="text-xs text-muted-foreground">{e.role === 'admin' ? 'Admin' : 'Employee'}</div>}
                           </div>
                         </div>
                       </td>
@@ -588,9 +644,13 @@ export default function AdminEmployees() {
                       {isAdmin && (
                         <td className="px-4 py-3">
                           <div className="flex justify-end gap-1">
-                            <Button asChild size="icon" variant="ghost" className="h-8 w-8"><Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link></Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(e)}><Pencil className="h-4 w-4" /></Button>
-                            <DeleteEmpButton onConfirm={() => { deleteEmployee.mutate(e.id); toast.success("Employee deleted"); }} name={e.name} />
+                            {isAdmin && (
+                              <>
+                                <Button asChild size="icon" variant="ghost" className="h-8 w-8"><Link to={`/admin/employees/${e.id}`}><Eye className="h-4 w-4" /></Link></Button>
+                                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(e)}><Pencil className="h-4 w-4" /></Button>
+                                <DeleteEmpButton onConfirm={() => { deleteEmployee.mutate(e.id); toast.success("Employee deleted"); }} name={e.name} />
+                              </>
+                            )}
                           </div>
                         </td>
                       )}
@@ -633,56 +693,172 @@ function DeleteEmpButton({ onConfirm, name }: { onConfirm: () => void; name: str
   );
 }
 
-function RankListBuilder({ items, available, onChange }: { items: string[], available: string[], onChange: (items: string[]) => void }) {
+function SortableItem({ 
+  id, 
+  item, 
+  onRemove, 
+  onDeleteGlobal 
+}: { 
+  id: string, 
+  item: string, 
+  onRemove: () => void, 
+  onDeleteGlobal?: (item: string) => void 
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+  };
+
+  return (
+    <div 
+      ref={setNodeRef} 
+      style={style} 
+      className={cn(
+        "flex items-center gap-2 rounded-lg border bg-background p-2.5 shadow-sm transition-shadow",
+        isDragging && "shadow-lg ring-1 ring-primary/20 opacity-80"
+      )}
+    >
+      <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground">
+        <GripVertical className="h-4 w-4" />
+      </div>
+      <span className="flex-1 text-sm font-medium">{item}</span>
+      <div className="flex items-center gap-1">
+        <button 
+          type="button"
+          onClick={onRemove}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          title="Remove from priority list"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        {onDeleteGlobal && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button 
+                type="button"
+                className="text-muted-foreground hover:text-destructive transition-colors ml-1"
+                title="Delete keyword globally"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete "{item}" globally?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will remove this keyword from EVERY employee profile that currently has it. 
+                  This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction 
+                  onClick={() => onDeleteGlobal(item)}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Delete Everywhere
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RankListBuilder({ 
+  items, 
+  available, 
+  onChange,
+  onDeleteGlobal
+}: { 
+  items: string[], 
+  available: string[], 
+  onChange: (items: string[]) => void;
+  onDeleteGlobal?: (item: string) => void;
+}) {
   const unranked = available.filter(a => !items.includes(a));
   
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = items.indexOf(active.id as string);
+      const newIndex = items.indexOf(over.id as string);
+      onChange(arrayMove(items, oldIndex, newIndex));
+    }
+  }
+
   return (
-    <div className="space-y-2">
-      <div className="space-y-1.5">
-        {items.map((item, i) => (
-          <div key={item} className="flex items-center gap-2 bg-muted/40 p-2 rounded-md border border-border/50 text-sm animate-in fade-in">
-            <span className="font-mono w-5 text-muted-foreground text-xs">{i + 1}.</span>
-            <span className="flex-1 truncate">{item}</span>
-            <button 
-              type="button" 
-              onClick={() => i > 0 && onChange([...items.slice(0, i-1), items[i], items[i-1], ...items.slice(i+1)])}
-              disabled={i === 0}
-              className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground transition-colors"
-            >
-              ↑
-            </button>
-            <button 
-              type="button"
-              onClick={() => i < items.length - 1 && onChange([...items.slice(0, i), items[i+1], items[i], ...items.slice(i+2)])}
-              disabled={i === items.length - 1}
-              className="text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground transition-colors"
-            >
-              ↓
-            </button>
-            <button 
-              type="button"
-              onClick={() => onChange(items.filter(x => x !== item))}
-              className="text-muted-foreground hover:text-destructive transition-colors ml-1"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
-        {items.length === 0 && <div className="text-sm text-muted-foreground p-2 border border-dashed rounded-md bg-muted/20 text-center">No priority set. Defaults to alphabetical.</div>}
-      </div>
-      
-      {unranked.length > 0 && (
-        <select 
-          className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-          value=""
-          onChange={e => {
-            if (e.target.value) onChange([...items, e.target.value]);
-          }}
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Priority Order</Label>
+          <span className="text-[10px] text-muted-foreground italic">Drag to change rankings</span>
+        </div>
+        
+        <DndContext 
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
         >
-          <option value="">+ Add to ranking...</option>
-          {unranked.map(u => <option key={u} value={u}>{u}</option>)}
-        </select>
-      )}
+          <SortableContext 
+            items={items}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-2">
+              {items.map((item) => (
+                <SortableItem 
+                  key={item} 
+                  id={item} 
+                  item={item} 
+                  onRemove={() => onChange(items.filter(x => x !== item))}
+                  onDeleteGlobal={onDeleteGlobal}
+                />
+              ))}
+              {items.length === 0 && (
+                <div className="text-sm text-muted-foreground p-4 border border-dashed rounded-lg bg-muted/20 text-center">
+                  No priority set. Defaults to alphabetical.
+                </div>
+              )}
+            </div>
+          </SortableContext>
+        </DndContext>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Available (Unranked)</Label>
+        <div className="flex flex-wrap gap-2">
+          {unranked.map(u => (
+            <button
+              key={u}
+              type="button"
+              onClick={() => onChange([...items, u])}
+              className="inline-flex items-center gap-1.5 rounded-full border bg-muted/40 px-3 py-1 text-xs font-medium hover:bg-primary/10 hover:text-primary transition-colors"
+            >
+              <Plus className="h-3 w-3" /> {u}
+            </button>
+          ))}
+          {unranked.length === 0 && <div className="text-xs text-muted-foreground">All items are ranked.</div>}
+        </div>
+      </div>
     </div>
   );
 }

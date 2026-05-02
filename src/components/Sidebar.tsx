@@ -9,6 +9,7 @@ const adminNav = [
   { to: "/admin/employees",  label: "Employees",   icon: Users },
   { to: "/admin/tasks",      label: "All tasks",   icon: ListTodo },
   { to: "/admin/my-tasks",   label: "My tasks",    icon: CheckSquare2 },
+  { to: "/admin/employees/ME", label: "My Profile",  icon: User },
   { to: "/admin/approvals",  label: "Approvals",   icon: Inbox, badge: "approvals" as const },
   { to: "/admin/tasks/new",  label: "Create task", icon: PlusCircle },
 ];
@@ -17,13 +18,13 @@ const empNav = [
   { to: "/me",         label: "Dashboard",      icon: LayoutDashboard, end: true },
   { to: "/me/tasks",   label: "My tasks",       icon: ListTodo },
   { to: "/me/team",    label: "Team Directory", icon: Users },
-  { to: "/me/profile", label: "Profile",        icon: User },
+  { to: "/me/employees/ME", label: "Profile",   icon: User },
 ];
 
 interface Props { open: boolean; onClose: () => void; }
 
 export function Sidebar({ open, onClose }: Props) {
-  const { user, logout } = useApp();
+  const { user, profile, logout } = useApp();
   const { pathname } = useLocation();
   const items = user?.role === "admin" ? adminNav : empNav;
   const { data: tasks = [] } = useTasks(
@@ -66,12 +67,13 @@ export function Sidebar({ open, onClose }: Props) {
           <div className="px-2 pb-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Workspace</div>
           <ul className="space-y-1">
             {items.map(item => {
-              const active = item.end ? pathname === item.to : pathname.startsWith(item.to);
+              const to = item.to.replace("ME", user?.employeeId || profile?.id || "");
+              const active = item.end ? pathname === to : pathname.startsWith(to);
               const Icon = item.icon;
               return (
                 <li key={item.to}>
                   <NavLink
-                    to={item.to}
+                    to={to}
                     end={item.end}
                     onClick={onClose}
                     className={cn(

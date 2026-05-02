@@ -3,8 +3,10 @@ import { useTasks } from "@/hooks/useTasks";
 import { useProfile } from "@/hooks/useProfiles";
 import { UserAvatar } from "@/components/UserAvatar";
 import { TaskCard } from "@/components/TaskCard";
-import { Mail, Building2, CalendarDays, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { Mail, Building2, CalendarDays, CheckCircle2, Clock, AlertTriangle, Download } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { downloadCSV, calculateTaskDuration } from "@/lib/csv-export";
 
 export default function EmployeeProfile() {
   const { user } = useApp();
@@ -40,13 +42,39 @@ export default function EmployeeProfile() {
                 <div className="text-muted-foreground">{me.role}</div>
               </div>
             </div>
-            <div className="rounded-2xl border bg-background/70 p-4 min-w-[240px] sm:self-center">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium">Performance</span>
-                <span className="font-semibold tabular-nums gradient-text">{pct}%</span>
+            <div className="rounded-2xl border bg-background/70 p-4 min-w-[240px] sm:self-center flex flex-col justify-center">
+              <div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Performance</span>
+                  <span className="font-semibold tabular-nums gradient-text">{pct}%</span>
+                </div>
+                <Progress value={pct} className="mt-2 h-2" />
+                <div className="mt-1.5 text-xs text-muted-foreground">{done} of {total} tasks completed</div>
               </div>
-              <Progress value={pct} className="mt-2 h-2" />
-              <div className="mt-1.5 text-xs text-muted-foreground">{done} of {total} tasks completed</div>
+              {done > 0 && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="mt-3 w-full text-xs"
+                  onClick={() => {
+                    const rows = my.map(t => [
+                      t.title,
+                      t.priority,
+                      t.status,
+                      t.due_date,
+                      t.started_at ? new Date(t.started_at).toLocaleString() : "—",
+                      t.approved_at ? new Date(t.approved_at).toLocaleString() : "—",
+                      calculateTaskDuration(t)
+                    ]);
+                    downloadCSV(`My_Performance_Report`, 
+                      ["Task", "Priority", "Status", "Due Date", "Started At", "Completed At", "Time Taken"], 
+                      rows
+                    );
+                  }}
+                >
+                  <Download className="mr-2 h-3.5 w-3.5" /> Download My Report
+                </Button>
+              )}
             </div>
           </div>
 

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserAvatar } from "@/components/UserAvatar";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -100,14 +101,19 @@ export default function AdminCreateTask() {
                             setAssigneeId(e.id);
                             setOpenAssignee(false);
                           }}
+                          className="flex items-center gap-2"
                         >
                           <Check
                             className={cn(
-                              "mr-2 h-4 w-4",
+                              "h-4 w-4 shrink-0",
                               assigneeId === e.id ? "opacity-100" : "opacity-0"
                             )}
                           />
-                          {e.name} · {e.job_title ?? "Employee"}
+                          <UserAvatar name={e.name} color={e.avatar_color ?? undefined} size="sm" />
+                          <div className="flex flex-col">
+                            <span className="font-medium">{e.name}</span>
+                            <span className="text-[10px] text-muted-foreground leading-none">{e.job_title ?? "Employee"}</span>
+                          </div>
                         </CommandItem>
                       ))}
                     </CommandGroup>

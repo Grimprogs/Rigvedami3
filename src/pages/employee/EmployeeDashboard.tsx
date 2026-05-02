@@ -2,9 +2,10 @@ import { useApp } from "@/context/AppContext";
 import { useTasks } from "@/hooks/useTasks";
 import { useProfile } from "@/hooks/useProfiles";
 import { TaskCard } from "@/components/TaskCard";
-import { CheckCircle2, Clock, AlertTriangle, ListTodo, Sparkles } from "lucide-react";
+import { CheckCircle2, Clock, AlertTriangle, ListTodo, Sparkles, Trophy } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Link } from "react-router-dom";
+import { calculateTaskDuration } from "@/lib/csv-export";
 
 export default function EmployeeDashboard() {
   const { user } = useApp();
@@ -29,18 +30,28 @@ export default function EmployeeDashboard() {
     return "Good evening";
   })();
 
-  // Mini timeline: next 7 days
+  // Mini timeline: past 3 days, today, next 3 days
   const days = Array.from({ length: 7 }).map((_, i) => {
-    const d = new Date(); d.setDate(d.getDate() + i);
+    const d = new Date(); d.setDate(d.getDate() - 3 + i);
     const key = d.toISOString().slice(0, 10);
     return {
       key,
       label: d.toLocaleDateString(undefined, { weekday: "short" }),
       day: d.getDate(),
-      isToday: i === 0,
-      tasks: my.filter(t => t.due_date === key),
+      isToday: i === 3,
+      tasks: my.filter(t => {
+        if (t.status === 'completed' && t.approved_at) {
+          return t.approved_at.slice(0, 10) === key;
+        }
+        return t.due_date === key;
+      }),
     };
   });
+
+  const recentlyCompleted = [...my]
+    .filter(t => t.status === "completed" && t.approved_at)
+    .sort((a, b) => (b.approved_at!).localeCompare(a.approved_at!))
+    .slice(0, 3);
 
   return (
     <div className="space-y-6">
@@ -80,6 +91,28 @@ export default function EmployeeDashboard() {
           <div className="grid gap-3 sm:grid-cols-2">
             {upcoming.map(t => <TaskCard key={t.id} task={t} showAssignee={false} canComplete compact />)}
             {upcoming.length === 0 && <div className="rounded-xl border bg-muted/30 p-6 text-center text-sm text-muted-foreground sm:col-span-2">All caught up. 🎉</div>}
+          </div>
+
+          <div className="mt-8 mb-4">
+            <h2 className="font-display text-lg font-semibold flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-warning" /> Recent achievements
+            </h2>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {recentlyCompleted.map(t => (
+              <div key={t.id} className="rounded-xl border bg-background/50 p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-medium text-sm line-clamp-2">{t.title}</div>
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                </div>
+                <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-1">
+                    <Clock className="h-3 w-3" /> Time taken: <strong className="text-foreground">{calculateTaskDuration(t)}</strong>
+                  </span>
+                </div>
+              </div>
+            ))}
+            {recentlyCompleted.length === 0 && <div className="rounded-xl border bg-muted/30 p-6 text-center text-sm text-muted-foreground sm:col-span-2">No completed tasks yet. Keep going!</div>}
           </div>
         </div>
 

@@ -1,10 +1,12 @@
 import { useApp } from "@/context/AppContext";
 import { useTasks } from "@/hooks/useTasks";
 import { useProfiles } from "@/hooks/useProfiles";
-import { Users, ListTodo, CheckCircle2, Clock, AlertTriangle, TrendingUp, Inbox, Activity } from "lucide-react";
+import { Users, ListTodo, CheckCircle2, Clock, AlertTriangle, TrendingUp, Inbox, Activity, Download } from "lucide-react";
 import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 import { TaskCard } from "@/components/TaskCard";
 import { UserAvatar } from "@/components/UserAvatar";
+import { downloadCSV, calculateTaskDuration } from "@/lib/csv-export";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
   PieChart, Pie, Cell, Legend
@@ -41,7 +43,7 @@ function StatCard({ icon: Icon, label, value, trend, tone = "primary" }: any) {
 export default function AdminDashboard() {
   const { visibleNotifications } = useApp();
   const { data: tasks = [] } = useTasks({ role: "admin" });
-  const { data: employees = [] } = useProfiles("employee");
+  const { data: employees = [] } = useProfiles();
   const completed = tasks.filter(t => t.status === "completed").length;
   const pending   = tasks.filter(t => t.status === "pending").length;
   const inprog    = tasks.filter(t => t.status === "in_progress").length;
@@ -77,6 +79,31 @@ export default function AdminDashboard() {
           <h1 className="font-display text-3xl font-bold">Welcome back, Admin 👋</h1>
           <p className="text-muted-foreground">Here's what's happening across your team today.</p>
         </div>
+        <Button 
+          className="bg-gradient-primary shadow-glow hover:opacity-95 text-white"
+          onClick={() => {
+            downloadCSV(`ZTasks_Global_Report_${new Date().toISOString().slice(0, 10)}`, 
+              ["Employee", "Role", "Department", "Task", "Priority", "Status", "Due Date", "Started At", "Completed At", "Time Taken"], 
+              tasks.map(t => {
+                const emp = empMap.get(t.assignee_id ?? "");
+                return [
+                  emp?.name || "Unassigned",
+                  emp?.role || "—",
+                  emp?.department || "—",
+                  t.title,
+                  t.priority,
+                  t.status,
+                  t.due_date,
+                  t.started_at ? new Date(t.started_at).toLocaleString() : "—",
+                  t.approved_at ? new Date(t.approved_at).toLocaleString() : "—",
+                  calculateTaskDuration(t)
+                ];
+              })
+            );
+          }}
+        >
+          <Download className="mr-2 h-4 w-4" /> Export Global Report
+        </Button>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
@@ -209,24 +236,31 @@ export default function AdminDashboard() {
         <div className="surface-card p-5">
           <h2 className="font-display text-lg font-semibold mb-4">Top performers</h2>
           <ul className="space-y-3">
-            {employees.slice(0, 6).map(e => {
-              const total = tasks.filter(t => t.assignee_id === e.id).length;
-              const done  = tasks.filter(t => t.assignee_id === e.id && t.status === "completed").length;
-              const pct = total ? Math.round((done / total) * 100) : 0;
-              return (
+            {[...employees]
+              .map(e => {
+                const total = tasks.filter(t => t.assignee_id === e.id).length;
+                const done  = tasks.filter(t => t.assignee_id === e.id && t.status === "completed").length;
+                const pct = total ? Math.round((done / total) * 100) : 0;
+                return { ...e, total, done, pct };
+              })
+              .sort((a, b) => b.pct - a.pct || b.done - a.done)
+              .slice(0, 6)
+              .map(e => (
                 <li key={e.id} className="flex items-center gap-3">
                   <UserAvatar name={e.name} color={e.avatar_color ?? undefined} size="md" />
                   <div className="min-w-0 flex-1">
                     <Link to={`/admin/employees/${e.id}`} className="font-medium text-sm truncate hover:underline">{e.name}</Link>
-                    <div className="text-xs text-muted-foreground truncate">{e.role}</div>
-                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div className="h-full bg-gradient-primary" style={{ width: `${pct}%` }} />
+                    <div className="text-xs text-muted-foreground truncate">{e.role} • {e.department || "No Dept"}</div>
+                    <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full bg-gradient-primary transition-all duration-500" style={{ width: `${e.pct}%` }} />
                     </div>
                   </div>
-                  <div className="text-xs font-semibold tabular-nums">{pct}%</div>
+                  <div className="text-right">
+                    <div className="text-xs font-bold tabular-nums">{e.pct}%</div>
+                    <div className="text-[10px] text-muted-foreground">{e.done}/{e.total}</div>
+                  </div>
                 </li>
-              );
-            })}
+              ))}
           </ul>
         </div>
       </div>
